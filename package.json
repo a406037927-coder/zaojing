@@ -1,0 +1,16 @@
+{
+  "name": "zaojing-ai-platform",
+  "private": true,
+  "version": "1.0.0",
+  "packageManager": "pnpm@10.17.1",
+  "scripts": {
+    "dev": "concurrently -n server,client -c green,cyan \"pnpm --filter server dev\" \"pnpm --filter client dev\"",
+    "build": "pnpm --filter client build && pnpm --filter server build",
+    "typecheck": "pnpm --filter client typecheck && pnpm --filter server typecheck",
+    "test": "pnpm --filter server test",
+    "start": "pnpm --filter server start"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
