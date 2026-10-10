@@ -1,6 +1,13 @@
-FROM node:24-bookworm-slim AS build
+ARG NODE_IMAGE=node:24-bookworm-slim
+FROM ${NODE_IMAGE} AS build
+ARG DEBIAN_MIRROR=deb.debian.org/debian
+ARG DEBIAN_SECURITY_MIRROR=deb.debian.org/debian-security
 WORKDIR /app
-RUN corepack enable
+RUN sed -i "s|deb.debian.org/debian|${DEBIAN_MIRROR}|g; s|security.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends python3 make g++ \
+    && rm -rf /var/lib/apt/lists/* \
+    && corepack enable
 
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
 COPY client/package.json client/package.json
@@ -11,7 +18,7 @@ COPY client client
 COPY server server
 RUN pnpm build
 
-FROM node:24-bookworm-slim AS runtime
+FROM ${NODE_IMAGE} AS runtime
 ENV NODE_ENV=production PORT=3000 DATA_DIR=/app/data
 WORKDIR /app
 RUN groupadd --system app && useradd --system --gid app --create-home app \
