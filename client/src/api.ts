@@ -1,4 +1,4 @@
-import type { ProjectPayload, ProjectSummary, User } from "./types";
+import type { AcceptanceItem, ProjectPayload, ProjectSummary, User, VersionPayload } from "./types";
 
 class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -33,6 +33,7 @@ export const api = {
   logout: () => request<void>("/api/auth/logout", { method: "POST" }),
   listProjects: () => request<{ projects: ProjectSummary[] }>("/api/projects"),
   getProject: (id: string) => request<ProjectPayload>(`/api/projects/${id}`),
+  getVersion: (id: string, versionNo: number) => request<VersionPayload>(`/api/projects/${id}/versions/${versionNo}`),
   generate: (prompt: string) => request<ProjectPayload>("/api/projects/generate", {
     method: "POST",
     body: JSON.stringify({ prompt }),
@@ -41,6 +42,33 @@ export const api = {
     method: "POST",
     body: JSON.stringify({ prompt }),
   }),
-  restore: (id: string) => request<ProjectPayload>(`/api/projects/${id}/restore`, { method: "POST" }),
+  repair: (id: string, acceptanceItemIds: string[]) => request<ProjectPayload>(`/api/projects/${id}/repair`, {
+    method: "POST",
+    body: JSON.stringify({ acceptanceItemIds }),
+  }),
+  rename: (id: string, name: string) => request<ProjectPayload>(`/api/projects/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ name }),
+  }),
+  restore: (id: string, versionNo?: number) => request<ProjectPayload>(`/api/projects/${id}/restore`, {
+    method: "POST",
+    body: JSON.stringify(versionNo ? { versionNo } : {}),
+  }),
+  addAcceptance: (id: string, versionNo: number, title: string, expected: string) =>
+    request<{ item: AcceptanceItem }>(`/api/projects/${id}/versions/${versionNo}/acceptance`, {
+      method: "POST", body: JSON.stringify({ title, expected }),
+    }),
+  updateAcceptance: (id: string, versionNo: number, item: AcceptanceItem) =>
+    request<{ item: AcceptanceItem }>(`/api/projects/${id}/versions/${versionNo}/acceptance/${item.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        title: item.title,
+        expected: item.expected_result,
+        status: item.status,
+        issueDescription: item.issue_description,
+      }),
+    }),
+  deleteAcceptance: (id: string, versionNo: number, itemId: string) =>
+    request<void>(`/api/projects/${id}/versions/${versionNo}/acceptance/${itemId}`, { method: "DELETE" }),
   delete: (id: string) => request<void>(`/api/projects/${id}`, { method: "DELETE" }),
 };

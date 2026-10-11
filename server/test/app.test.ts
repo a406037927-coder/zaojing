@@ -49,6 +49,7 @@ describe("projects API", () => {
     createdIds.add(id);
     expect(generated.body.project.current_version).toBe(1);
     expect(generated.body.project.code).toContain("版本 1");
+    expect(generated.body.acceptance).toHaveLength(3);
 
     const listed = await agent.get("/api/projects").expect(200);
     expect(listed.body.projects.some((item: { id: string }) => item.id === id)).toBe(true);
@@ -62,10 +63,15 @@ describe("projects API", () => {
       .expect(200);
     expect(modified.body.project.current_version).toBe(2);
     expect(modified.body.project.code).toContain("版本 2");
+    expect(modified.body.acceptance.every((item: { status: string }) => item.status === "unchecked")).toBe(true);
 
-    const restored = await agent.post(`/api/projects/${id}/restore`).expect(200);
-    expect(restored.body.project.current_version).toBe(1);
+    const restored = await agent.post(`/api/projects/${id}/restore`).send({ versionNo: 1 }).expect(200);
+    expect(restored.body.project.current_version).toBe(3);
     expect(restored.body.project.code).toContain("版本 1");
+    expect(restored.body.versions[0].operation_type).toBe("restore");
+
+    const historical = await agent.get(`/api/projects/${id}/versions/2`).expect(200);
+    expect(historical.body.version.code).toContain("版本 2");
 
     await agent.delete(`/api/projects/${id}`).expect(204);
     createdIds.delete(id);
@@ -92,6 +98,39 @@ describe("projects API", () => {
     const project = await agent.get(`/api/projects/${id}`).expect(200);
     expect(project.body.project.current_version).toBe(1);
     expect(project.body.project.code).toContain("稳定版本");
+  });
+
+  it("persists acceptance feedback, repairs into a new version and keeps old records", async () => {
+    let generation = 0;
+    const app = createApp({ generate: async () => page(`修复版本 ${++generation}`) });
+    const { agent } = await register(app);
+    const generated = await agent.post("/api/projects/generate").send({ prompt: "生成待办清单" }).expect(201);
+    const id = generated.body.project.id as string;
+    createdIds.add(id);
+    const item = generated.body.acceptance[0];
+
+    await agent.patch(`/api/projects/${id}/versions/1/acceptance/${item.id}`).send({
+      title: item.title,
+      expected: item.expected_result,
+      status: "failed",
+      issueDescription: "点击按钮没有响应",
+    }).expect(200);
+
+    const reopened = await agent.get(`/api/projects/${id}`).expect(200);
+    expect(reopened.body.acceptance[0].status).toBe("failed");
+    expect(reopened.body.acceptance[0].issue_description).toContain("没有响应");
+
+    const repaired = await agent.post(`/api/projects/${id}/repair`).send({ acceptanceItemIds: [item.id] }).expect(200);
+    expect(repaired.body.project.current_version).toBe(2);
+    expect(repaired.body.versions[0].operation_type).toBe("repair");
+    expect(repaired.body.acceptance.every((entry: { status: string }) => entry.status === "unchecked")).toBe(true);
+
+    const old = await agent.get(`/api/projects/${id}/versions/1`).expect(200);
+    expect(old.body.acceptance[0].status).toBe("failed");
+    expect(old.body.acceptance[0].issue_description).toBe("点击按钮没有响应");
+
+    const renamed = await agent.patch(`/api/projects/${id}`).send({ name: "我的待办" }).expect(200);
+    expect(renamed.body.project.name).toBe("我的待办");
   });
 
   it("returns clear validation errors", async () => {
