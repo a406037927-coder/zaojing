@@ -16,10 +16,12 @@ export const config = {
   aiBaseUrl: (process.env.AI_API_BASE_URL || "").replace(/\/$/, ""),
   aiKey: process.env.AI_API_KEY || "",
   aiModel: process.env.AI_MODEL || "",
-  aiTimeoutMs: asPositiveInt(process.env.AI_REQUEST_TIMEOUT_MS, 90_000),
-  aiMaxOutputTokens: asPositiveInt(process.env.AI_MAX_OUTPUT_TOKENS, 12_000),
+  aiTimeoutMs: asPositiveInt(process.env.AI_REQUEST_TIMEOUT_MS, 300_000),
+  aiMaxOutputTokens: asPositiveInt(process.env.AI_MAX_OUTPUT_TOKENS, 20_000),
   aiMaxConcurrency: asPositiveInt(process.env.AI_MAX_CONCURRENCY, 2),
   rateLimitPerHour: asPositiveInt(process.env.AI_RATE_LIMIT_PER_HOUR, 20),
+  sessionDays: asPositiveInt(process.env.SESSION_DAYS, 7),
+  cookieSecure: process.env.COOKIE_SECURE === "true",
   clientDist: path.resolve(serverRoot, "..", "client", "dist"),
 };
 

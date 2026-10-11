@@ -1,4 +1,4 @@
-import type { ProjectPayload, ProjectSummary } from "./types";
+import type { ProjectPayload, ProjectSummary, User } from "./types";
 
 class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -21,6 +21,16 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   health: () => request<{ status: string; aiConfigured: boolean }>("/api/health"),
+  me: () => request<{ user: User | null }>("/api/auth/me"),
+  register: (username: string, password: string) => request<{ user: User }>("/api/auth/register", {
+    method: "POST",
+    body: JSON.stringify({ username, password }),
+  }),
+  login: (username: string, password: string) => request<{ user: User }>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ username, password }),
+  }),
+  logout: () => request<void>("/api/auth/logout", { method: "POST" }),
   listProjects: () => request<{ projects: ProjectSummary[] }>("/api/projects"),
   getProject: (id: string) => request<ProjectPayload>(`/api/projects/${id}`),
   generate: (prompt: string) => request<ProjectPayload>("/api/projects/generate", {

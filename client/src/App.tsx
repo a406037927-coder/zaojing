@@ -1,11 +1,12 @@
 import * as React from "react";
-import { AlertCircle, CheckCircle2, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, LogOut, X } from "lucide-react";
 import { api } from "./api";
 import { Brand } from "./components/Brand";
+import { AuthScreen } from "./components/AuthScreen";
 import { Composer } from "./components/Composer";
 import { HistorySidebar } from "./components/HistorySidebar";
 import { PreviewPanel } from "./components/PreviewPanel";
-import type { Project, ProjectSummary, ProjectVersion } from "./types";
+import type { Project, ProjectSummary, ProjectVersion, User } from "./types";
 
 type Notice = { type: "success" | "error"; message: string } | null;
 
@@ -17,6 +18,8 @@ export function App() {
   const [loadingHistory, setLoadingHistory] = React.useState(true);
   const [aiConfigured, setAiConfigured] = React.useState<boolean | null>(null);
   const [notice, setNotice] = React.useState<Notice>(null);
+  const [user, setUser] = React.useState<User | null>(null);
+  const [authLoading, setAuthLoading] = React.useState(true);
 
   const notify = React.useCallback((message: string, type: "success" | "error" = "success") => {
     setNotice({ message, type });
@@ -28,14 +31,15 @@ export function App() {
   }, []);
 
   React.useEffect(() => {
-    Promise.all([api.listProjects(), api.health()])
-      .then(([list, health]) => {
-        setProjects(list.projects);
+    Promise.all([api.me(), api.health()])
+      .then(async ([auth, health]) => {
+        setUser(auth.user);
         setAiConfigured(health.aiConfigured);
+        if (auth.user) await refreshProjects();
       })
       .catch((error: Error) => notify(error.message, "error"))
-      .finally(() => setLoadingHistory(false));
-  }, [notify]);
+      .finally(() => { setLoadingHistory(false); setAuthLoading(false); });
+  }, [notify, refreshProjects]);
 
   React.useEffect(() => {
     if (!notice) return;
@@ -114,6 +118,27 @@ export function App() {
     }
   };
 
+  const authenticated = async (nextUser: User) => {
+    setUser(nextUser);
+    setLoadingHistory(true);
+    try {
+      await refreshProjects();
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const logout = async () => {
+    await api.logout();
+    setUser(null);
+    setProjects([]);
+    setProject(null);
+    setVersions([]);
+  };
+
+  if (authLoading) return <div className="app-loading"><span className="spinner" /><strong>正在载入造境 AI</strong></div>;
+  if (!user) return <AuthScreen aiConfigured={aiConfigured} onAuthenticated={authenticated} />;
+
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -121,6 +146,8 @@ export function App() {
         <div className="header-status">
           <span className={`status-dot ${aiConfigured === false ? "warning" : ""}`} />
           {aiConfigured === null ? "正在连接服务" : aiConfigured ? "AI 服务已连接" : "等待配置 AI 服务"}
+          <span className="user-name">{user.username}</span>
+          <button className="logout-button" onClick={logout} title="退出登录"><LogOut size={15} />退出</button>
         </div>
       </header>
       <div className="workspace">

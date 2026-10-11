@@ -10,6 +10,8 @@
 - 自动清理 Markdown 代码围栏并校验完整 HTML，拒绝外部脚本、外部样式及危险执行方式。
 - 预览/代码视图、桌面/手机宽度切换、复制源码、下载 HTML。
 - SQLite 项目历史，支持重新打开、删除、继续修改和恢复上一版本。
+- 注册登录、HttpOnly 会话 Cookie 与按用户隔离的项目历史；首个注册账号自动接管升级前的历史项目。
+- 生成后自动进入第二轮模型代码审查，重点修复事件绑定、状态更新、ID 类型及增删改查交互问题。
 - 输入长度校验、按 IP 基础限流、模型调用并发限制、超时与输出长度限制。
 - 同源生产部署、Docker 持久化数据卷、非 root 容器用户和健康检查。
 
@@ -49,10 +51,12 @@ AI_MODEL=your-model-name
 | --- | --- | --- |
 | `PORT` | `3000` | 生产服务端口 |
 | `DATA_DIR` | `./data` | SQLite 数据目录 |
-| `AI_REQUEST_TIMEOUT_MS` | `90000` | 模型请求超时 |
-| `AI_MAX_OUTPUT_TOKENS` | `12000` | 最大输出 token |
+| `AI_REQUEST_TIMEOUT_MS` | `300000` | 一次生成流程的总超时（包含生成与代码审查） |
+| `AI_MAX_OUTPUT_TOKENS` | `20000` | 单次模型响应的最大输出 token |
 | `AI_MAX_CONCURRENCY` | `2` | 单实例生成并发数 |
 | `AI_RATE_LIMIT_PER_HOUR` | `20` | 每 IP 每小时生成/修改次数 |
+| `SESSION_DAYS` | `7` | 登录会话有效天数 |
+| `COOKIE_SECURE` | `false` | HTTPS 部署后应设置为 `true` |
 
 API Key 仅由 Node 服务读取，不会进入前端 bundle、接口响应或正常日志。
 
@@ -100,8 +104,8 @@ docker compose start
 
 ## 演示步骤
 
-1. 打开平台，选择“待办清单”示例或输入自己的需求。
-2. 点击“生成应用”，等待模型返回；右侧预览可直接操作。
+1. 打开平台并注册账号；从旧版本升级时，第一个注册账号会接管已有项目。
+2. 选择“待办清单”示例或输入自己的需求，点击“生成应用”，等待生成和代码审查完成。
 3. 切换“代码”、桌面/手机宽度，测试复制与下载。
 4. 刷新页面，从左侧历史重新打开项目。
 5. 输入“增加分类筛选，改成深色主题”，点击“继续修改”。
@@ -115,10 +119,12 @@ docker compose start
 ## 安全说明
 
 - 不提交 `.env`、API Key、SQLite 数据文件或日志。
+- 密码使用随机盐的 scrypt 哈希保存，登录态使用服务端 SQLite 会话和 HttpOnly Cookie。
 - 生成结果不会在后端执行。
 - iframe sandbox 不包含 `allow-same-origin`、`allow-popups`、`allow-top-navigation`。
 - 预览注入 CSP，禁止网络连接和外部资源。
-- HTML 校验是基础防护，不等同于完整恶意代码审计；公网生产环境建议增加账号体系、配额、审计与更强隔离。
+- HTML 校验与第二轮模型审查可显著减少无响应按钮，但不等同于完整恶意代码审计或浏览器级形式化验证。
+- 当前公网实例仍是 HTTP，仅适合受控演示；正式开放注册前必须配置域名与 HTTPS，并设置 `COOKIE_SECURE=true`。
 
 ## 公网部署
 
@@ -132,7 +138,7 @@ vim .env
 docker compose up -d --build
 ```
 
-建议使用 Nginx/Caddy 反向代理 `127.0.0.1:3000` 并配置 HTTPS。不要直接提交 `.env`，也不要把 API Key 写进 Compose 文件或前端环境变量。
+建议使用 Nginx/Caddy 反向代理 `127.0.0.1:3000`，模型生成接口的代理超时应不低于 `AI_REQUEST_TIMEOUT_MS`，并配置 HTTPS。不要直接提交 `.env`，也不要把 API Key 写进 Compose 文件或前端环境变量。
 
 ## GitHub 提交
 
@@ -151,4 +157,4 @@ git push -u origin main
 
 ## 验收记录
 
-本次实际执行的环境、命令、通过项与未验证项记录在 [TEST_RESULTS.md](./TEST_RESULTS.md)。当前环境没有真实模型凭据，因此真实模型质量尚未验证；端到端产品流程使用本地 OpenAI 兼容模拟端点测试，并未作为真实 AI 调用成果宣称。
+本次实际执行的环境、命令、通过项与未验证项记录在 [TEST_RESULTS.md](./TEST_RESULTS.md)。阿里云 ECS 已配置百炼兼容接口并完成过真实生成；本轮升级完成了生产镜像构建、自动化测试、临时数据库认证实测与线上健康检查。模型对任意复杂需求的业务正确性仍不能作绝对保证。

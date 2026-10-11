@@ -12,7 +12,19 @@ const baseInstructions = `你是一名资深前端工程师和产品设计师。
 4. 使用语义化 HTML、响应式布局、清晰的中文界面和无障碍标签。
 5. 数据只需保存在页面运行期间的内存中，不要依赖 localStorage、cookie、IndexedDB 或联网请求。
 6. 不使用 eval、new Function、iframe、object、embed、window.open 或顶层导航。
-7. 不要生成 React/Vue 源码；直接生成浏览器可以执行的 HTML/CSS/JavaScript。`;
+7. 所有业务 ID 必须使用 crypto.randomUUID() 生成字符串；dataset 读取结果也是字符串，不得用 parseInt 处理 ID。
+8. 每次新增、删除、修改、筛选后都必须重新渲染相关列表与统计数据；提交前逐项检查所有可见按钮确实绑定事件。
+9. 不要生成 React/Vue 源码；直接生成浏览器可以执行的 HTML/CSS/JavaScript。`;
+
+const reviewInstructions = `你是一名严格的前端代码审查工程师。请审查下面的完整 HTML，并直接返回修复后的完整 HTML 文档，不要解释，不要使用 Markdown 围栏。
+
+必须逐项检查并修复：
+1. 所有按钮、表单、添加、删除、编辑、筛选、切换和重置操作都有真实事件处理。
+2. 状态改变后立即重新渲染列表、汇总和可见结果。
+3. ID 一律使用 crypto.randomUUID() 字符串；dataset 值按字符串比较，禁止 parseInt 处理 ID。
+4. 禁止 localStorage、sessionStorage、IndexedDB、cookie、联网请求及外部资源；数据仅保存在内存。
+5. 禁止 eval、new Function、iframe、object、embed、window.open 和顶层导航。
+6. 保持原需求、现有功能、中文界面和响应式样式，不要删减功能。`;
 
 export class AiConfigError extends Error {}
 export class AiResponseError extends Error {}
@@ -42,11 +54,42 @@ export function extractAndValidateHtml(raw: string) {
     /<(?:iframe|object|embed)\b/i,
     /\b(?:eval|new\s+Function)\s*\(/i,
     /\bwindow\.open\s*\(/i,
+    /\b(?:localStorage|sessionStorage|indexedDB)\b/i,
+    /\bdocument\.cookie\b/i,
   ];
   if (forbidden.some((pattern) => pattern.test(html))) {
     throw new AiResponseError("模型输出包含外部资源或受限制的执行方式，请重试。");
   }
   return html;
+}
+
+async function requestCompletion(userContent: string, signal: AbortSignal) {
+  const response = await fetch(endpoint(), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${config.aiKey}`,
+    },
+    body: JSON.stringify({
+      model: config.aiModel,
+      messages: [
+        { role: "system", content: baseInstructions },
+        { role: "user", content: userContent },
+      ],
+      temperature: 0.25,
+      max_tokens: config.aiMaxOutputTokens,
+    }),
+    signal,
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    const safeReason = body.slice(0, 300).replace(/sk-[A-Za-z0-9_-]+/g, "[REDACTED]");
+    throw new AiResponseError(`模型接口请求失败（HTTP ${response.status}）：${safeReason || "请检查服务配置"}`);
+  }
+  const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+  const content = payload.choices?.[0]?.message?.content;
+  if (!content) throw new AiResponseError("模型接口未返回有效内容。");
+  return content;
 }
 
 function endpoint() {
@@ -68,34 +111,12 @@ export async function generateApplication(prompt: string, existingCode?: string)
     : `应用需求：${prompt}`;
 
   try {
-    const response = await fetch(endpoint(), {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${config.aiKey}`,
-      },
-      body: JSON.stringify({
-        model: config.aiModel,
-        messages: [
-          { role: "system", content: baseInstructions },
-          { role: "user", content: userContent },
-        ],
-        temperature: 0.4,
-        max_tokens: config.aiMaxOutputTokens,
-      }),
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      const body = await response.text();
-      const safeReason = body.slice(0, 300).replace(/sk-[A-Za-z0-9_-]+/g, "[REDACTED]");
-      throw new AiResponseError(`模型接口请求失败（HTTP ${response.status}）：${safeReason || "请检查服务配置"}`);
-    }
-    const payload = await response.json() as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const content = payload.choices?.[0]?.message?.content;
-    if (!content) throw new AiResponseError("模型接口未返回有效内容。");
-    return extractAndValidateHtml(content);
+    const draft = await requestCompletion(userContent, controller.signal);
+    const reviewed = await requestCompletion(
+      `${reviewInstructions}\n\n待审查代码：\n${draft.slice(0, 250_000)}`,
+      controller.signal,
+    );
+    return extractAndValidateHtml(reviewed);
   } catch (error) {
     if (error instanceof AiConfigError || error instanceof AiResponseError) throw error;
     if (error instanceof Error && error.name === "AbortError") {

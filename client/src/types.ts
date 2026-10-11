@@ -23,3 +23,9 @@ export interface ProjectPayload {
   project: Project;
   versions: ProjectVersion[];
 }
+
+export interface User {
+  id: string;
+  username: string;
+  created_at: string;
+}
